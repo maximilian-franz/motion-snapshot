@@ -121,6 +121,34 @@ See timer logs:
 
 Re-run the installer to pull the latest repository version and re-apply configuration.
 
+## Uninstall
+
+Use the installer in uninstall mode:
+
+	sudo bash install.sh --uninstall
+
+Skip the confirmation prompt:
+
+	sudo bash install.sh --uninstall --yes
+
+What uninstall does:
+
+- Stops and disables:
+	- motion-snapshot.timer
+	- motion-snapshot.service
+	- motion.service
+- Removes systemd links:
+	- /etc/systemd/system/motion-snapshot.service
+	- /etc/systemd/system/motion-snapshot.timer
+- Removes installed app directory:
+	- /opt/motion-snapshot
+- Removes Motion configs managed by this installer:
+	- /etc/motion/motion.conf
+	- /etc/motion/conf.d/camera-*.conf
+- Removes dedicated service user/group (if present):
+	- motion-snapshot user
+	- motion-snapshot group
+
 ## Troubleshooting
 
 No cameras discovered:

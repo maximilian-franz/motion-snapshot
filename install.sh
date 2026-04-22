@@ -21,6 +21,8 @@ MOTION_API_USER="snapshotctl"
 REPO_URL="https://github.com/maximilian-franz/motion-snapshot"
 REPO_BRANCH="main"
 declare -a CAMERA_DEVICES=()
+UNINSTALL_MODE=0
+FORCE_UNINSTALL=0
 
 require_root() {
   if [[ "${EUID}" -ne 0 ]]; then
@@ -35,6 +37,36 @@ require_tty() {
     echo "Interactive mode requires a TTY (/dev/tty is not available)."
     exit 1
   fi
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --uninstall)
+        UNINSTALL_MODE=1
+        shift
+        ;;
+      --yes)
+        FORCE_UNINSTALL=1
+        shift
+        ;;
+      -h|--help)
+        cat <<'EOF'
+Usage:
+  install.sh                Install motion-snapshot
+  install.sh --uninstall    Uninstall motion-snapshot
+  install.sh --uninstall --yes
+                            Uninstall without confirmation prompt
+EOF
+        exit 0
+        ;;
+      *)
+        echo "Unknown argument: $1"
+        echo "Run with --help for usage."
+        exit 1
+        ;;
+    esac
+  done
 }
 
 prompt_input() {
@@ -410,8 +442,74 @@ show_summary() {
   echo "  journalctl -u motion-snapshot.service -n 200 --no-pager"
 }
 
+confirm_uninstall() {
+  if [[ "$FORCE_UNINSTALL" -eq 1 ]]; then
+    return
+  fi
+
+  require_tty
+
+  echo
+  echo "This will remove:"
+  echo "  - $APP_DIR"
+  echo "  - $SERVICE_LINK and $TIMER_LINK"
+  echo "  - /etc/motion/motion.conf"
+  echo "  - /etc/motion/conf.d/camera-*.conf"
+  echo "  - user/group $APP_USER/$APP_GROUP (if present)"
+  echo "  - It will also stop/disable motion.service and motion-snapshot timer/service"
+  echo
+
+  local answer
+  answer="$(prompt_input "Continue uninstall? [y/N]: ")"
+  if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+    echo "Uninstall cancelled."
+    exit 0
+  fi
+}
+
+uninstall_everything() {
+  echo "[UNINSTALL] Stopping and disabling services..."
+
+  systemctl disable --now motion-snapshot.timer >/dev/null 2>&1 || true
+  systemctl disable --now motion-snapshot.service >/dev/null 2>&1 || true
+  systemctl disable --now motion.service >/dev/null 2>&1 || true
+
+  echo "[UNINSTALL] Removing systemd links and reloading daemon..."
+
+  rm -f "$SERVICE_LINK" "$TIMER_LINK"
+  systemctl daemon-reload
+
+  echo "[UNINSTALL] Removing installed application files..."
+  rm -rf "$APP_DIR"
+
+  echo "[UNINSTALL] Removing Motion configs managed by installer..."
+  rm -f "$MOTION_CONF_FILE"
+  rm -f "$MOTION_CAMERA_DIR"/camera-*.conf
+
+  echo "[UNINSTALL] Removing dedicated service user/group..."
+  if id -u "$APP_USER" >/dev/null 2>&1; then
+    userdel "$APP_USER" >/dev/null 2>&1 || true
+  fi
+
+  if getent group "$APP_GROUP" >/dev/null; then
+    groupdel "$APP_GROUP" >/dev/null 2>&1 || true
+  fi
+
+  echo
+  echo "Uninstall complete."
+}
+
 main() {
+  parse_args "$@"
+
   require_root
+
+  if [[ "$UNINSTALL_MODE" -eq 1 ]]; then
+    confirm_uninstall
+    uninstall_everything
+    return
+  fi
+
   require_tty
   install_packages
   fetch_repository
