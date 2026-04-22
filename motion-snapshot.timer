@@ -1,0 +1,12 @@
+[Unit]
+Description=Run motion snapshot capture/upload at specific times
+
+[Timer]
+OnCalendar=*-*-* 06:00:00
+OnCalendar=*-*-* 14:00:00
+OnCalendar=*-*-* 22:00:00
+Persistent=true
+Unit=motion-snapshot.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,19 @@
+[Unit]
+Description=Capture webcam snapshots and upload them to Hugging Face
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/motion-snapshot
+ExecStart=/opt/motion-snapshot/.venv/bin/python3 /opt/motion-snapshot/motion-snapshot.py
+User=root
+Group=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/motion
+
+[Install]
+WantedBy=multi-user.target
