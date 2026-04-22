@@ -162,6 +162,7 @@ prompt_camera_settings() {
     local use_detected
     use_detected="$(prompt_input "Use discovered devices? [Y/n]: ")"
     if [[ -z "$use_detected" || "$use_detected" =~ ^[Yy]$ ]]; then
+      select_discovered_camera_subset
       return
     fi
   else
@@ -170,6 +171,31 @@ prompt_camera_settings() {
   fi
 
   prompt_camera_settings_manual
+}
+
+select_discovered_camera_subset() {
+  local discovered=("${CAMERA_DEVICES[@]}")
+  local selected=()
+
+  echo
+  echo "Select which discovered cameras to configure:"
+
+  local idx
+  for idx in "${!discovered[@]}"; do
+    local include
+    include="$(prompt_input "Include $((idx + 1)) (${discovered[$idx]})? [Y/n]: ")"
+    if [[ -z "$include" || "$include" =~ ^[Yy]$ ]]; then
+      selected+=("${discovered[$idx]}")
+    fi
+  done
+
+  if [[ ${#selected[@]} -eq 0 ]]; then
+    echo "No discovered cameras selected. Proceeding with manual camera setup."
+    prompt_camera_settings_manual
+    return
+  fi
+
+  CAMERA_DEVICES=("${selected[@]}")
 }
 
 discover_camera_devices() {
