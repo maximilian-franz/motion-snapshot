@@ -23,6 +23,8 @@ REPO_BRANCH="main"
 declare -a CAMERA_DEVICES=()
 UNINSTALL_MODE=0
 FORCE_UNINSTALL=0
+MOTION_RUN_USER="motion"
+MOTION_RUN_GROUP="motion"
 
 require_root() {
   if [[ "${EUID}" -ne 0 ]]; then
@@ -86,6 +88,32 @@ prompt_secret() {
 
 command_exists() {
   command -v "$1" >/dev/null 2>&1
+}
+
+resolve_motion_runtime_identity() {
+  local svc_user=""
+  local svc_group=""
+
+  svc_user="$(systemctl show -p User --value motion.service 2>/dev/null || true)"
+  svc_group="$(systemctl show -p Group --value motion.service 2>/dev/null || true)"
+
+  if [[ -n "$svc_user" && "$svc_user" != "root" ]] && id -u "$svc_user" >/dev/null 2>&1; then
+    MOTION_RUN_USER="$svc_user"
+  elif id -u motion >/dev/null 2>&1; then
+    MOTION_RUN_USER="motion"
+  else
+    MOTION_RUN_USER="root"
+  fi
+
+  if [[ -n "$svc_group" ]] && getent group "$svc_group" >/dev/null; then
+    MOTION_RUN_GROUP="$svc_group"
+  elif getent group motion >/dev/null; then
+    MOTION_RUN_GROUP="motion"
+  elif id -u "$MOTION_RUN_USER" >/dev/null 2>&1; then
+    MOTION_RUN_GROUP="$(id -gn "$MOTION_RUN_USER")"
+  else
+    MOTION_RUN_GROUP="root"
+  fi
 }
 
 install_packages() {
@@ -303,6 +331,10 @@ install_motion_configs() {
 
   echo "[6/11] Installing Motion configuration..."
 
+  mkdir -p /var/lib/motion
+  chown "$MOTION_RUN_USER":"$MOTION_RUN_GROUP" /var/lib/motion
+  chmod 775 /var/lib/motion
+
   mkdir -p "$MOTION_ETC_DIR" "$MOTION_CAMERA_DIR"
 
   cp "$APP_DIR/motion.conf" "$MOTION_CONF_FILE"
@@ -332,6 +364,10 @@ install_motion_configs() {
     local camera_device="${CAMERA_DEVICES[$idx]}"
     local camera_target="/var/lib/motion/camera-${camera_id}"
     local camera_file="$MOTION_CAMERA_DIR/camera-${camera_id}.conf"
+
+    mkdir -p "$camera_target"
+    chown "$MOTION_RUN_USER":"$MOTION_RUN_GROUP" "$camera_target"
+    chmod 775 "$camera_target"
 
     cp "$camera_template" "$camera_file"
 
@@ -538,6 +574,7 @@ main() {
 
   require_tty
   install_packages
+  resolve_motion_runtime_identity
   fetch_repository
   prompt_hf_settings
   prompt_camera_settings
