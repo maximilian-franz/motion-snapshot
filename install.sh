@@ -422,6 +422,10 @@ EOF
   chmod 640 "$ENV_FILE"
   chown root:"$APP_GROUP" "$ENV_FILE"
 
+  mkdir -p "$APP_DIR/.cache"
+  chown "$APP_USER":"$APP_GROUP" "$APP_DIR/.cache"
+  chmod 770 "$APP_DIR/.cache"
+
   find "$APP_DIR" -maxdepth 1 -type f -name '*.py' -exec chmod 755 {} +
   find "$APP_DIR" -maxdepth 1 -type f -name '*.py' -exec chown root:root {} +
   chmod 644 "$APP_DIR/requirements.txt"
@@ -442,9 +446,12 @@ patch_service_unit() {
   local file="$1"
 
   sed -i "s|^WorkingDirectory=.*|WorkingDirectory=${APP_DIR}|" "$file"
+  sed -i "s|^Environment=XDG_CACHE_HOME=.*|Environment=XDG_CACHE_HOME=${APP_DIR}/.cache|" "$file"
+  sed -i "s|^Environment=HF_HOME=.*|Environment=HF_HOME=${APP_DIR}/.cache/huggingface|" "$file"
   sed -i "s|^ExecStart=.*|ExecStart=${VENV_DIR}/bin/python3 ${APP_DIR}/motion-snapshot.py|" "$file"
   sed -i "s|^User=.*|User=${APP_USER}|" "$file"
   sed -i "s|^Group=.*|Group=${APP_GROUP}|" "$file"
+  sed -i "s|^ReadWritePaths=.*|ReadWritePaths=/var/lib/motion ${APP_DIR}/.cache|" "$file"
 }
 
 install_systemd_units() {
