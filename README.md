@@ -44,12 +44,13 @@ What the installer does:
 3. Prompts for Hugging Face repo ID and token.
 4. Auto-discovers webcams via /dev/v4l/by-path/*-video-index0 (fallback to /dev/video*).
 5. Lets you confirm discovered cameras or enter them manually.
-6. Generates a Motion webcontrol password.
-7. Installs Motion config to /etc/motion and camera configs to /etc/motion/conf.d.
-8. Writes /opt/motion-snapshot/.env with your Hugging Face settings and generated Motion credentials.
-9. Creates a virtual environment in /opt/motion-snapshot/.venv and installs Python dependencies.
-10. Installs and links systemd service and timer units.
-11. Enables and starts motion.service and motion-snapshot.timer.
+6. Prompts for snapshot schedule times (default: 06:00, 14:00, 22:00, or custom HH:MM times).
+7. Generates a Motion webcontrol password.
+8. Installs Motion config to /etc/motion and camera configs to /etc/motion/conf.d.
+9. Writes /opt/motion-snapshot/.env with your Hugging Face settings and generated Motion credentials.
+10. Creates a virtual environment in /opt/motion-snapshot/.venv and installs Python dependencies.
+11. Installs and links systemd service and timer units.
+12. Enables and starts motion.service and motion-snapshot.timer.
 
 ## Camera Discovery and Configuration
 
@@ -87,13 +88,23 @@ Main variables:
 
 ## Scheduling
 
-The timer in [motion-snapshot.timer](motion-snapshot.timer) runs at:
+During installation, [install.sh](install.sh) prompts you for one or more schedule times in 24-hour HH:MM format.
+
+If you accept defaults, it uses:
 
 - 06:00
 - 14:00
 - 22:00
 
-Adjust these times in [motion-snapshot.timer](motion-snapshot.timer) and reload systemd if needed.
+The installer writes your selected times into [motion-snapshot.timer](motion-snapshot.timer) as OnCalendar entries.
+
+To change the schedule later, either:
+
+- Re-run the installer and enter new times when prompted.
+- Or edit [motion-snapshot.timer](motion-snapshot.timer) manually, then reload and restart the timer:
+
+	sudo systemctl daemon-reload
+	sudo systemctl restart motion-snapshot.timer
 
 ## Useful Commands
 

@@ -21,6 +21,7 @@ MOTION_API_USER="snapshotctl"
 REPO_URL="https://github.com/maximilian-franz/motion-snapshot"
 REPO_BRANCH="main"
 declare -a CAMERA_DEVICES=()
+declare -a SNAPSHOT_TIMES=()
 UNINSTALL_MODE=0
 FORCE_UNINSTALL=0
 MOTION_RUN_USER="motion"
@@ -300,8 +301,65 @@ prompt_camera_settings_manual() {
   done
 }
 
+is_valid_hhmm_time() {
+  local value="$1"
+  [[ "$value" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]
+}
+
+time_already_selected() {
+  local candidate="$1"
+  local existing
+  for existing in "${SNAPSHOT_TIMES[@]}"; do
+    if [[ "$existing" == "$candidate" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+prompt_snapshot_schedule() {
+  echo "[5/11] Snapshot schedule setup"
+  echo "Default times: 06:00, 14:00, 22:00"
+  echo "Times are local server time in 24-hour HH:MM format."
+
+  local use_defaults
+  use_defaults="$(prompt_input "Use default times? [Y/n]: ")"
+
+  if [[ -z "$use_defaults" || "$use_defaults" =~ ^[Yy]$ ]]; then
+    SNAPSHOT_TIMES=("06:00" "14:00" "22:00")
+    return
+  fi
+
+  SNAPSHOT_TIMES=()
+
+  while true; do
+    local schedule_time
+    schedule_time="$(prompt_input "Enter snapshot time (HH:MM): ")"
+
+    while ! is_valid_hhmm_time "$schedule_time"; do
+      schedule_time="$(prompt_input "Invalid format. Enter time as HH:MM (24-hour): ")"
+    done
+
+    if time_already_selected "$schedule_time"; then
+      echo "Time $schedule_time is already selected."
+    else
+      SNAPSHOT_TIMES+=("$schedule_time")
+    fi
+
+    local add_more
+    add_more="$(prompt_input "Add another time? [y/N]: ")"
+    if [[ ! "$add_more" =~ ^[Yy]$ ]]; then
+      if [[ ${#SNAPSHOT_TIMES[@]} -eq 0 ]]; then
+        echo "At least one schedule time is required."
+        continue
+      fi
+      break
+    fi
+  done
+}
+
 create_app_user() {
-  echo "[5/11] Creating dedicated service user..."
+  echo "[6/11] Creating dedicated service user..."
 
   if ! getent group "$APP_GROUP" >/dev/null; then
     groupadd --system "$APP_GROUP"
@@ -329,7 +387,7 @@ generate_password() {
 install_motion_configs() {
   local motion_password="$1"
 
-  echo "[6/11] Installing Motion configuration..."
+  echo "[7/11] Installing Motion configuration..."
 
   mkdir -p /var/lib/motion
   chown "$MOTION_RUN_USER":"$MOTION_RUN_GROUP" /var/lib/motion
@@ -403,7 +461,7 @@ install_motion_configs() {
 install_env_file() {
   local motion_password="$1"
 
-  echo "[7/11] Writing environment file..."
+  echo "[8/11] Writing environment file..."
 
   cat >"$ENV_FILE" <<EOF
 HF_REPO_ID=${HF_REPO_ID}
@@ -433,7 +491,7 @@ EOF
 }
 
 install_python_env() {
-  echo "[8/11] Creating Python virtual environment and installing dependencies..."
+  echo "[9/11] Creating Python virtual environment and installing dependencies..."
 
   python3 -m venv "$VENV_DIR"
   "$VENV_DIR/bin/pip" install --upgrade pip
@@ -454,8 +512,35 @@ patch_service_unit() {
   sed -i "s|^ReadWritePaths=.*|ReadWritePaths=/var/lib/motion ${APP_DIR}/.cache|" "$file"
 }
 
+patch_timer_unit() {
+  local file="$1"
+
+  if [[ ${#SNAPSHOT_TIMES[@]} -eq 0 ]]; then
+    echo "No snapshot schedule times configured."
+    exit 1
+  fi
+
+  {
+    echo "[Unit]"
+    echo "Description=Run motion snapshot capture/upload at specific times"
+    echo
+    echo "[Timer]"
+
+    local snapshot_time
+    for snapshot_time in "${SNAPSHOT_TIMES[@]}"; do
+      echo "OnCalendar=*-*-* ${snapshot_time}:00"
+    done
+
+    echo "Persistent=true"
+    echo "Unit=motion-snapshot.service"
+    echo
+    echo "[Install]"
+    echo "WantedBy=timers.target"
+  } >"$file"
+}
+
 install_systemd_units() {
-  echo "[9/11] Installing systemd service and timer..."
+  echo "[10/11] Installing systemd service and timer..."
 
   if [[ ! -f "$SERVICE_FILE" || ! -f "$TIMER_FILE" ]]; then
     echo "Service or timer file missing in repository."
@@ -463,6 +548,7 @@ install_systemd_units() {
   fi
 
   patch_service_unit "$SERVICE_FILE"
+  patch_timer_unit "$TIMER_FILE"
 
   chmod 644 "$SERVICE_FILE" "$TIMER_FILE"
   chown root:root "$SERVICE_FILE" "$TIMER_FILE"
@@ -474,7 +560,7 @@ install_systemd_units() {
 }
 
 enable_and_start_services() {
-  echo "[10/11] Enabling and starting services..."
+  echo "[11/11] Enabling and starting services..."
 
   systemctl enable --now motion.service
   systemctl enable motion-snapshot.service
@@ -484,7 +570,7 @@ enable_and_start_services() {
 show_summary() {
   local motion_password="$1"
 
-  echo "[11/11] Installation complete"
+  echo "Installation complete"
   echo
   echo
   echo "Repository: $REPO_URL (branch: $REPO_BRANCH)"
@@ -494,6 +580,10 @@ show_summary() {
   local idx
   for idx in "${!CAMERA_DEVICES[@]}"; do
     echo "  - camera-$((idx + 1)): ${CAMERA_DEVICES[$idx]}"
+  done
+  echo "Snapshot schedule:"
+  for idx in "${!SNAPSHOT_TIMES[@]}"; do
+    echo "  - ${SNAPSHOT_TIMES[$idx]}"
   done
   echo
   echo "Generated Motion API credentials:"
@@ -585,6 +675,7 @@ main() {
   fetch_repository
   prompt_hf_settings
   prompt_camera_settings
+  prompt_snapshot_schedule
   create_app_user
 
   local motion_password
