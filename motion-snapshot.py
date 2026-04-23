@@ -362,7 +362,10 @@ def merge_metadata_rows(
     existing_rows: list[MetadataRow],
     new_records: list[SnapshotRecord],
 ) -> list[MetadataRow]:
-    by_file_name = {row["file_name"]: row for row in existing_rows}
+    merged_rows = list(existing_rows)
+    file_name_to_index = {
+        row["file_name"]: index for index, row in enumerate(merged_rows)
+    }
 
     for record in new_records:
         row = {
@@ -370,9 +373,16 @@ def merge_metadata_rows(
             "camera_id": record.camera_id,
             "timestamp": record.timestamp,
         }
-        by_file_name[row["file_name"]] = row
 
-    return [by_file_name[key] for key in sorted(by_file_name.keys())]
+        existing_index = file_name_to_index.get(row["file_name"])
+        if existing_index is not None:
+            # Keep row ordering stable while refreshing data for duplicate keys.
+            merged_rows[existing_index] = row
+        else:
+            file_name_to_index[row["file_name"]] = len(merged_rows)
+            merged_rows.append(row)
+
+    return merged_rows
 
 
 def clear_snapshot_directory(directory: Path, logger: logging.Logger) -> None:
